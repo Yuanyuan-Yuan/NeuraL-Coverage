@@ -12,12 +12,12 @@ import tool
 
 
 class Coverage:
-    def __init__(self, model, layer_size_dict):
+    def __init__(self, model, layer_size_dict, hyper=None):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.model.to(self.device)
         self.layer_size_dict = layer_size_dict
-        self.init_variable()
+        self.init_variable(hyper)
 
     def init_variable(self):
         raise NotImplementedError
@@ -37,8 +37,7 @@ class Coverage:
     def build(self, data_loader):
         print('Building is not needed.')
 
-    def init_cov(self, data_loader):
-        print('Initilizing covergae...')
+    def assess(self, data_loader):
         for data, *_ in tqdm(data_loader):
             data = data.to(self.device)
             self.step(data)
@@ -60,10 +59,11 @@ class Coverage:
 
 
 class SurpriseCoverage(Coverage):
-    def init_variable(self, threshold, min_var, class_num):
+    def init_variable(self, hyper, min_var, class_num):
         self.name = self.get_name()
         assert self.name in ['LSC', 'DSC', 'MDSC']
-        self.threshold = threshold
+        assert hyper is not None
+        self.threshold = hyper
         self.min_var = min_var
         self.class_num = class_num
         self.data_count = 0
@@ -97,14 +97,13 @@ class SurpriseCoverage(Coverage):
         if self.name == 'LSC':
             self.set_kde()
 
-    def init_cov(self, data_loader):
-        print('Initializing Coverage...')
+    def assess(self, data_loader):
         for i, (data, label) in enumerate(tqdm(data_loader)):
             data = data.to(self.device)
             label = label.to(self.device)
-            self.build_step(data, label)
+            self.step(data, label)
 
-    def build_step(self, data, label):
+    def step(self, data, label):
         cove_set = self.calculate(data, label)
         self.update(cove_set)
 
@@ -188,7 +187,8 @@ class SurpriseCoverage(Coverage):
 
 
 class NLC(Coverage):
-    def init_variable(self):
+    def init_variable(self, hyper=None):
+        assert hyper is None, 'NLC has no hyper-parameter'
         self.estimator_dict = {}
         self.current = 1
         for (layer_name, layer_size) in self.layer_size_dict.items():
@@ -411,8 +411,9 @@ class MDSC(SurpriseCoverage):
 
 
 class NC(Coverage):
-    def init_variable(self, threshold):
-        self.threshold = threshold
+    def init_variable(self, hyper):
+        assert hyper is not None
+        self.threshold = hyper
         self.coverage_dict = {}
         for (layer_name, layer_size) in self.layer_size_dict.items():
             self.coverage_dict[layer_name] = torch.zeros(layer_size[0]).type(torch.BoolTensor).to(self.device)
@@ -446,8 +447,9 @@ class NC(Coverage):
 
 
 class KMNC(Coverage):
-    def init_variable(self, k):
-        self.k = k
+    def init_variable(self, hyper):
+        assert hyper is not None
+        self.k = hyper
         self.name = 'KMNC'
         self.range_dict = {}
         coverage_multisec_dict = {}
@@ -526,7 +528,8 @@ class KMNC(Coverage):
 
 
 class SNAC(KMNC):
-    def init_variable(self):
+    def init_variable(self, hyper=None):
+        assert hyper is None
         self.name = 'SNAC'
         self.range_dict = {}
         coverage_upper_dict = {}
@@ -565,6 +568,7 @@ class SNAC(KMNC):
 
 class NBC(KMNC):
     def init_variable(self):
+        assert hyper is None
         self.name = 'NBC'
         self.range_dict = {}
         coverage_lower_dict = {}
@@ -619,8 +623,9 @@ class NBC(KMNC):
 
 
 class TKNC(Coverage):
-    def init_variable(self, k):
-        self.k = k
+    def init_variable(self, hyper):
+        assert hyper is not None
+        self.k = hyper
         self.coverage_dict = {}
         for (layer_name, layer_size) in self.layer_size_dict.items():
             num_neuron = layer_size[0]
@@ -661,8 +666,9 @@ class TKNC(Coverage):
 
 
 class TKNP(Coverage):
-    def init_variable(self, k):
-        self.k = k
+    def init_variable(self, hyper):
+        assert hyper is not None
+        self.k = hyper
         layer_pattern = {}
         network_pattern = set()
         self.current = 0
@@ -715,8 +721,9 @@ class CC(Coverage):
     '''
     Cluster-based Coverage, i.e., the coverage proposed by TensorFuzz
     '''
-    def init_variable(self, threshold):
-        self.threshold = threshold
+    def init_variable(self, hyper):
+        assert hyper is not None
+        self.threshold = hyper
         self.distant_dict = {}
         self.flann_dict = {}
 
