@@ -20,10 +20,10 @@ This repo implements the **NLC** proposed in our paper and previous neuron cover
 
 Each criterion is implemented as one Python class in `coverage.py`.
 
-[1] *DeepXplore: Automated whitebox testing of deep learning systems*, SOSP 2017.
-[2] *DeepGauge: Comprehensive and multi granularity testing criteria for gauging the robustness of deep learning systems*, ASE 2018.
-[3] *Tensorfuzz: Debugging neural networks with coverage-guided fuzzing*, ICML 2019.
-[4]  *Guiding deep learning system testing using surprise adequacy*, ICSE 2019.
+[1] *DeepXplore: Automated whitebox testing of deep learning systems*, SOSP 2017.  
+[2] *DeepGauge: Comprehensive and multi granularity testing criteria for gauging the robustness of deep learning systems*, ASE 2018.  
+[3] *Tensorfuzz: Debugging neural networks with coverage-guided fuzzing*, ICML 2019.  
+[4]  *Guiding deep learning system testing using surprise adequacy*, ICSE 2019.  
 [5] *Reducing dnn labelling cost using surprise adequacy: An industrial case study for autonomous driving*, FSE Industry Track 2020.
 
 ## Updates:
@@ -42,12 +42,12 @@ TBA.
 
 - Build with Docker
 
-    We also provide a docker container for this repo, please see [DOCKER](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage).
+    We also provide a docker container for this repo, please see [DOCKER](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage/blob/main/DOCKER.md).
 
 ## Model & Dataset
 
-- Pretrained models: please see [MODEL](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage).
-- Datasets: please see [DATASET](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage).
+- Pretrained models: please see [MODEL](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage/blob/main/MODEL.md).
+- Datasets: please see [DATASET](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage/blob/main/DATASET.md).
 
 ## Getting Started
 
@@ -68,8 +68,7 @@ layer_size_dict = tool.get_layer_output_sizes(model, random_input)
 # set `hyper` as None if a criterion is hyper-paramter free (e.g., NLC).
 criterion = coverage.NLC(model, layer_size_dict, hyper=None)
 # KMNC/NBC/SNAC/LSC/DSC/MDSC requires training data statistics of the tested model,
-# which is implemented in `build`. `train_loader` can be a DataLoader object in Pytorch
-# or a list of data samples.
+# which is implemented in `build`. `train_loader` can be a DataLoader object in Pytorch or a list of data samples.
 # For other criteria, `build` function is empty.
 criterion.build(train_loader)
 
@@ -78,7 +77,7 @@ criterion.build(train_loader)
 criterion.assess(test_loader)
 # If test inputs are gradually given (e.g., in fuzzing), the calculate the coverage as the following way.
 for data in data_stream:
-  criterion.step(data)
+    criterion.step(data)
 
 # 3. Result
 # The following instruction assigns the current coverage value to `cov`.
