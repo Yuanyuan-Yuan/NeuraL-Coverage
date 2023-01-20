@@ -7,7 +7,6 @@ from pyflann import FLANN
 from scipy.stats import gaussian_kde
 from sklearn.neighbors import KernelDensity
 
-from estimator import Estimator, EstimatorFlatten
 import tool
 
 
@@ -192,7 +191,7 @@ class NLC(Coverage):
         self.estimator_dict = {}
         self.current = 1
         for (layer_name, layer_size) in self.layer_size_dict.items():
-            self.estimator_dict[layer_name] = Estimator(feature_num=layer_size[0])
+            self.estimator_dict[layer_name] = tool.Estimator(feature_num=layer_size[0])
     
     def calculate(self, data):
         stat_dict = {}
@@ -355,6 +354,27 @@ class DSC(SurpriseCoverage):
 class MDSC(SurpriseCoverage):
     def get_name(self):
         return 'MDSC'
+
+    def set_mask(self):
+        feature_num = 0
+        for layer_name in self.mean_dict.keys():
+            self.mask_index_dict[layer_name] = (self.var_dict[layer_name] >= self.min_var).nonzero()
+            feature_num += self.mask_index_dict[layer_name].size(0)
+        print('feature_num: ', feature_num)
+        self.estimator = tool.Estimator(feature_num=feature_num, class_num=self.class_num, use_cuda=True)
+
+    def build_SA(self, data_batch, label_batch):
+        SA_batch = []
+        batch_size = label_batch.size(0)
+        layer_output_dict = tool.get_layer_output(self.model, data_batch)
+        for (layer_name, layer_output) in layer_output_dict.items():
+            SA_batch.append(layer_output[:, self.mask_index_dict[layer_name]].view(batch_size, -1))
+        SA_batch = torch.cat(SA_batch, 1) # [batch_size, num_neuron]
+        # print('SA_batch: ', SA_batch.size())
+        SA_batch = SA_batch[~torch.any(SA_batch.isnan(), dim=1)]
+        SA_batch = SA_batch[~torch.any(SA_batch.isinf(), dim=1)]
+        stat_dict = self.estimator.calculate(SA_batch, label_batch)
+        self.estimator.update(stat_dict)
 
     def calculate(self, data_batch, label_batch):
         cove_set = set()
