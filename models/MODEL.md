@@ -12,5 +12,5 @@ We evaluate previous coverage criteria and NLC on the following DNN models.
 | BigGAN       | ImageNet         | Image & Generative model     | [here](https://github.com/ajbrock/BigGAN-PyTorch#pretrained-models) |
 | LSTM         | IMDB             | Text & Discriminative model  | [here](https://drive.google.com/drive/folders/1TtabCnGPRK5_8LkSdt5Br9Vwa6o_vIs_) |
 
-There implementations are shown in `models`.
+Their implementations are shown in `models`.
 
