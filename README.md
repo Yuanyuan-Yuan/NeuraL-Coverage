@@ -120,6 +120,8 @@ Our tested generative model is [BigGAN](https://arxiv.org/abs/1809.11096). We re
 
 Since we directly insert the BigGAN project path into system path, passing arguments to `eval_diversity_gen.py` in bash has conflicts with BigGAN projects. Therefore, we recommend first setting the following arguments in `eval_diversity_gen.py` and then run `python eval_diversity_gen.py`.
 
+*Of course, this should be implemented in a more elegant way...🫠 I will do it later.*
+
 - `--criterion` - The used coverage criterion.  
 choices = [`NC`, `KMNC`, `NBC`, `SNAC`, `TKNC`, `TKNP`, `CC`, `LSC`, `DSC`, `MDSC`, `NLC`]
 
