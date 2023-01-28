@@ -1,11 +1,13 @@
 import os
+import copy
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-import numpy as np
-import copy
 
+import constants
 
 def scale(out, dim=-1, rmax=1, rmin=0):
     out_max = out.max(dim)[0].unsqueeze(dim)
@@ -23,10 +25,10 @@ def is_valid(module):
     return (isinstance(module, nn.Linear)
             or isinstance(module, nn.Conv2d)
             or isinstance(module, nn.Conv1d)
-            # or isinstance(module, nn.Conv3d)
-            # or isinstance(module, nn.RNN)
-            # or isinstance(module, nn.LSTM)
-            # or isinstance(module, nn.GRU)
+            or isinstance(module, nn.Conv3d)
+            or isinstance(module, nn.RNN)
+            or isinstance(module, nn.LSTM)
+            or isinstance(module, nn.GRU)
             )
 
 def iterate_module(name, module, name_list, module_list):
@@ -39,11 +41,6 @@ def iterate_module(name, module, name_list, module_list):
                 name_list, module_list = \
                     iterate_module(child_name, child_module, name_list, module_list)
         return name_list, module_list
-
-'''
-The implementation of Pytorch hook is based on
-https://github.com/fabriceyhc/nc_diversity_attacks/blob/master/neuron_coverage.py
-'''
 
 def get_model_layers(model):
     layer_dict = {}
@@ -63,87 +60,100 @@ def get_model_layers(model):
     # print('layer name')
     # for k in layer_dict.keys():
     #     print(k, ': ', layer_dict[k])
-    
     return layer_dict
 
-def get_layer_output_sizes(model, data, layer_name=None):   
+def get_layer_output_sizes(model, data, pad_length=constants.PAD_LENGTH):   
     output_sizes = {}
-    hooks = []  
-    
+    hooks = []
+    name_counter = {}
     layer_dict = get_model_layers(model)
- 
     def hook(module, input, output):
-        module_idx = len(output_sizes)
-        m_key = list(layer_dict)[module_idx]
-        output_sizes[m_key] = list(output.size()[1:])
-        # output_sizes[m_key] = list(output.size())
-    
+        class_name = module.__class__.__name__
+        if class_name not in name_counter.keys():
+            name_counter[class_name] = 1
+        else:
+            name_counter[class_name] += 1
+        if ('RNN' in class_name) or ('LSTM' in class_name) or ('GRU' in class_name):
+            output_sizes['%s-%d' % (class_name, name_counter[class_name])] = [output[0].size(2)]
+        else:
+            output_sizes['%s-%d' % (class_name, name_counter[class_name])] = list(output.size()[1:])
+
     for name, module in layer_dict.items():
         hooks.append(module.register_forward_hook(hook))
-    
     try:
-        if type(data) is tuple:
-            model(*data)
-        else:
-            model(data)
+        model(data)
     finally:
         for h in hooks:
             h.remove()
+
+    unrolled_output_sizes = {}
+    for k in output_sizes.keys():
+        if ('RNN' in k) or ('LSTM' in k) or ('GRU' in k):
+            for i in range(pad_length):
+                unrolled_output_sizes['%s-%d' % (k, i)] = output_sizes[k]
+        else:
+            unrolled_output_sizes[k] = output_sizes[k]
     # DEBUG
     # print('output size')
     # for k in output_sizes.keys():
     #     print(k, ': ', output_sizes[k])
+    return unrolled_output_sizes
 
-    return output_sizes
-
-def get_layer_output(model, data, threshold=0.5, force_relu=False, layer_name=None):
-    with torch.no_grad():    
-        layer_dict = get_model_layers(model)
-
+def get_layer_output(model, data, pad_length=constants.PAD_LENGTH):
+    with torch.no_grad():
+        name_counter = {}        
         layer_output_dict = {}
+        layer_dict = get_model_layers(model)
         def hook(module, input, output):
-            module_idx = len(layer_output_dict)
-            m_key = list(layer_dict)[module_idx]
-            if force_relu:
-                output = F.relu(output)
-            layer_output_dict[m_key] = output # (N, K, H, W) or (N, K)
+            class_name = module.__class__.__name__
+            if class_name not in name_counter.keys():
+                name_counter[class_name] = 1
+            else:
+                name_counter[class_name] += 1
+            if ('RNN' in class_name) or ('LSTM' in class_name) or ('GRU' in class_name):
+                layer_output_dict['%s-%d' % (class_name, name_counter[class_name])] = output[0]
+            else:
+                layer_output_dict['%s-%d' % (class_name, name_counter[class_name])] = output
 
         hooks = []
         for layer, module in layer_dict.items():
             hooks.append(module.register_forward_hook(hook))
         try:
-            if type(data) is tuple:
-                final_out = model(*data)
-            else:
-                final_out = model(data)
-
+            final_out = model(data)
         finally:
             for h in hooks:
                 h.remove()
 
-        for layer, output in layer_output_dict.items():
-            assert len(output.size()) == 2 or len(output.size()) == 4
+        unrolled_layer_output_dict = {}
+        for k in layer_output_dict.keys():
+            if ('RNN' in k) or ('LSTM' in k) or ('GRU' in k):
+                assert pad_length == len(layer_output_dict[k])
+                for i in range(pad_length):
+                    unrolled_layer_output_dict['%s-%d' % (k, i)] = layer_output_dict[k][i]
+            else:
+                unrolled_layer_output_dict[k] = layer_output_dict[k]
+
+        for layer, output in unrolled_layer_output_dict.items():
             if len(output.size()) == 4: # (N, K, H, w)
                 output = output.mean((2, 3))
-            layer_output_dict[layer] = output.detach()
-        return layer_output_dict
-
+            unrolled_layer_output_dict[layer] = output.detach()
+        return unrolled_layer_output_dict
 
 class Estimator(object):
-    def __init__(self, feature_num, class_num=1):
+    def __init__(self, feature_num, num_class=1):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.class_num = class_num
-        self.CoVariance = torch.zeros(class_num, feature_num, feature_num).to(self.device)
-        self.Ave = torch.zeros(class_num, feature_num).to(self.device)
-        self.Amount = torch.zeros(class_num).to(self.device)
+        self.num_class = num_class
+        self.CoVariance = torch.zeros(num_class, feature_num, feature_num).to(self.device)
+        self.Ave = torch.zeros(num_class, feature_num).to(self.device)
+        self.Amount = torch.zeros(num_class).to(self.device)
 
     def calculate(self, features, labels=None):
         N = features.size(0)
-        C = self.class_num
+        C = self.num_class
         A = features.size(1)
 
         if labels is None:
-            labels = torch.zeros(N).to(self.device)
+            labels = torch.zeros(N).type(torch.LongTensor).to(self.device)
 
         NxCxFeatures = features.view(
             N, 1, A
@@ -223,20 +233,20 @@ class Estimator(object):
         return transformed.squeeze(-1)
 
 class EstimatorFlatten(object):
-    def __init__(self, feature_num, class_num=1):
+    def __init__(self, feature_num, num_class=1):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.class_num = class_num
-        self.CoVariance = torch.zeros(class_num, feature_num).to(self.device)
-        self.Ave = torch.zeros(class_num, feature_num).to(self.device)
-        self.Amount = torch.zeros(class_num).to(self.device)
+        self.num_class = num_class
+        self.CoVariance = torch.zeros(num_class, feature_num).to(self.device)
+        self.Ave = torch.zeros(num_class, feature_num).to(self.device)
+        self.Amount = torch.zeros(num_class).to(self.device)
 
     def calculate(self, features, labels=None):
         N = features.size(0)
-        C = self.class_num
+        C = self.num_class
         A = features.size(1)
 
         if labels is None:
-            labels = torch.zeros(N).to(self.device)
+            labels = torch.zeros(N).type(torch.LongTensor).to(self.device)
 
         NxCxFeatures = features.view(
             N, 1, A

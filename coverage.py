@@ -1,8 +1,10 @@
+from tqdm import tqdm
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from tqdm import tqdm
 from pyflann import FLANN
 from scipy.stats import gaussian_kde
 from sklearn.neighbors import KernelDensity
@@ -11,12 +13,12 @@ import tool
 
 
 class Coverage:
-    def __init__(self, model, layer_size_dict, hyper=None):
+    def __init__(self, model, layer_size_dict, hyper=None, **kwargs):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.model = model
         self.model.to(self.device)
         self.layer_size_dict = layer_size_dict
-        self.init_variable(hyper)
+        self.init_variable(hyper, **kwargs)
 
     def init_variable(self):
         raise NotImplementedError
@@ -38,12 +40,17 @@ class Coverage:
 
     def assess(self, data_loader):
         for data, *_ in tqdm(data_loader):
-            data = data.to(self.device)
+            if isinstance(data, tuple):
+                data = (data[0].to(self.device), data[1].to(self.device))
+            else:
+                data = data.to(self.device)
             self.step(data)
 
     def step(self, data):
         cove_dict = self.calculate(data)
-        self.update(cove_dict)
+        gain = self.gain(cove_dict)
+        if gain is not None:
+            self.update(cove_dict, gain)
 
     def update(self, all_cove_dict, delta=None):
         self.coverage_dict = all_cove_dict
@@ -58,13 +65,13 @@ class Coverage:
 
 
 class SurpriseCoverage(Coverage):
-    def init_variable(self, hyper, min_var, class_num):
+    def init_variable(self, hyper, min_var, num_class):
         self.name = self.get_name()
         assert self.name in ['LSC', 'DSC', 'MDSC']
         assert hyper is not None
         self.threshold = hyper
         self.min_var = min_var
-        self.class_num = class_num
+        self.num_class = num_class
         self.data_count = 0
         self.current = 0
         self.coverage_set = set()
@@ -84,12 +91,19 @@ class SurpriseCoverage(Coverage):
     def build(self, data_loader):
         print('Building Mean & Var...')
         for i, (data, label) in enumerate(tqdm(data_loader)):
+            # print(data.size())
+            if isinstance(data, tuple):
+                data = (data[0].to(self.device), data[1].to(self.device))
+            else:
                 data = data.to(self.device)
-            self.set_meam_var(data)
+            self.set_meam_var(data, label)
         self.set_mask()
         print('Building SA...')
-        for i, (data, label) in enumerate(tqdm(data_loader)):            
-            data = data.to(self.device)
+        for i, (data, label) in enumerate(tqdm(data_loader)):
+            if isinstance(data, tuple):
+                data = (data[0].to(self.device), data[1].to(self.device))
+            else:
+                data = data.to(self.device)
             label = label.to(self.device)
             self.build_SA(data, label)
         self.to_numpy()
@@ -98,16 +112,21 @@ class SurpriseCoverage(Coverage):
 
     def assess(self, data_loader):
         for i, (data, label) in enumerate(tqdm(data_loader)):
-            data = data.to(self.device)
+            if isinstance(data, tuple):
+                data = (data[0].to(self.device), data[1].to(self.device))
+            else:
+                data = data.to(self.device)
             label = label.to(self.device)
             self.step(data, label)
 
     def step(self, data, label):
         cove_set = self.calculate(data, label)
-        self.update(cove_set)
+        gain = self.gain(cove_set)
+        if gain is not None:
+            self.update(cove_set, gain)
 
-    def set_meam_var(self, data):
-        batch_size = data.size(0)
+    def set_meam_var(self, data, label):
+        batch_size = label.size(0)
         layer_output_dict = tool.get_layer_output(self.model, data)
         for (layer_name, layer_output) in layer_output_dict.items():
             self.data_count += batch_size
@@ -153,13 +172,13 @@ class SurpriseCoverage(Coverage):
         if delta:
             self.current += delta
         else:
-            self.current = self.all_coverage(self.coverage_set)
+            self.current = self.coverage(self.coverage_set)
 
     def coverage(self, cove_set):
         return len(cove_set)
 
     def gain(self, cove_set_new):
-        new_rate = self.all_coverage(cove_set_new)
+        new_rate = self.coverage(cove_set_new)
         return new_rate - self.current
 
     def save(self, path):
@@ -181,7 +200,7 @@ class SurpriseCoverage(Coverage):
         self.mean_dict = state['mean_dict']
         self.var_dict = state['var_dict']
         self.SA_cache = state['SA_cache']
-        loaded_cov = self.all_coverage(self.coverage_set)
+        loaded_cov = self.coverage(self.coverage_set)
         print('Loaded coverage: %f' % loaded_cov)
 
 
@@ -232,7 +251,7 @@ class NLC(Coverage):
         layer_to_update = []
         for i, layer_name in enumerate(stat_new.keys()):
             (new_Ave, new_CoVar, new_Amt) = stat_new[layer_name]
-            value = self.norm(new_CoVar) - self.nomr(self.estimator_dict[layer_name].CoVariance)
+            value = self.norm(new_CoVar) - self.norm(self.estimator_dict[layer_name].CoVariance)
             if value > 0:
                 layer_to_update.append(layer_name)
                 total += value
@@ -281,10 +300,12 @@ class LSC(SurpriseCoverage):
 
     def set_kde(self):
         for k in self.SA_cache.keys():
-            if self.class_num <= 100:
+            if self.num_class <= 1:
                 self.kde_cache[k] = gaussian_kde(self.SA_cache[k].T)
             else:
                 self.kde_cache[k] = KernelDensity(kernel='gaussian', bandwidth=0.2).fit(self.SA_cache[k])
+            # The original LSC uses the `gaussian_kde` function, however, we note that this function
+            # frequently crashes due to numerical issues, especially for large `num_class`.
 
     def calculate(self, data_batch, label_batch):
         cove_set = set()
@@ -296,15 +317,14 @@ class LSC(SurpriseCoverage):
         SA_batch = torch.cat(SA_batch, 1).detach().cpu().numpy() # [batch_size, num_neuron]
         for i, label in enumerate(label_batch):
             SA = SA_batch[i]
-            if (np.isnan(SA).any()) or (not np.isinf(SA).any()):
-                continue
-            if self.class_num <= 100:
+            # if (np.isnan(SA).any()) or (not np.isinf(SA).any()):
+            #     continue
+            if self.num_class <= 1:
                 lsa = np.asscalar(-self.kde_cache[int(label.cpu())].logpdf(np.expand_dims(SA, 1)))
             else:
                 lsa = np.asscalar(-self.kde_cache[int(label.cpu())].score_samples(np.expand_dims(SA, 0)))
             if (not np.isnan(lsa)) and (not np.isinf(lsa)):
                 cove_set.add(int(lsa / self.threshold))
-            # cove_set.add(int(lsa / self.threshold))
         cove_set = self.coverage_set.union(cove_set)
         return cove_set
 
@@ -336,7 +356,7 @@ class DSC(SurpriseCoverage):
             dist_a = dist_a.cpu().numpy()
 
             dist_b_list = []
-            for j in range(self.class_num):
+            for j in range(self.num_class):
                 if ( j != int(label.cpu()) ) and ( j in self.SA_cache.keys() ):
                     # # using numpy
                     # dist_b_list += np.linalg.norm(SA - self.SA_cache[j], axis=1).tolist()
@@ -361,7 +381,7 @@ class MDSC(SurpriseCoverage):
             self.mask_index_dict[layer_name] = (self.var_dict[layer_name] >= self.min_var).nonzero()
             feature_num += self.mask_index_dict[layer_name].size(0)
         print('feature_num: ', feature_num)
-        self.estimator = tool.Estimator(feature_num=feature_num, class_num=self.class_num, use_cuda=True)
+        self.estimator = tool.Estimator(feature_num=feature_num, num_class=self.num_class)
 
     def build_SA(self, data_batch, label_batch):
         SA_batch = []
@@ -427,7 +447,7 @@ class MDSC(SurpriseCoverage):
         self.estimator.Ave = state['mu']
         self.estimator.CoVariance = state['covar']
         self.estimator.Amount = state['amount']
-        loaded_cov = self.all_coverage(self.coverage_set)
+        loaded_cov = self.coverage(self.coverage_set)
 
 
 class NC(Coverage):
@@ -484,8 +504,11 @@ class KMNC(Coverage):
 
     def build(data_loader):
         print('Building range...')
-        for data in tqdm(data_loader):
-            data = data.to(self.device)
+        for data, *_ in tqdm(data_loader):
+            if isinstance(data, tuple):
+                data = (data[0].to(self.device), data[1].to(self.device))
+            else:
+                data = data.to(self.device)
             self.set_range(data)
 
     def set_range(self, data):
@@ -555,8 +578,8 @@ class SNAC(KMNC):
         coverage_upper_dict = {}
         for (layer_name, layer_size) in self.layer_size_dict.items():
             num_neuron = layer_size[0]
-            coverage_upper_dict[layer_name] = torch.zeros(num_neuron).cuda().type(torch.cuda.BoolTensor)
-            self.range_dict[layer_name] = [torch.ones(num_neuron).cuda() * 10000, torch.ones(num_neuron).cuda() * -10000]
+            coverage_upper_dict[layer_name] = torch.zeros(num_neuron).type(torch.BoolTensor).to(self.device)
+            self.range_dict[layer_name] = [torch.ones(num_neuron).to(self.device) * 10000, torch.ones(num_neuron).to(self.device) * -10000]
         self.coverage_dict = {
             'upper': coverage_upper_dict
         }
@@ -595,9 +618,9 @@ class NBC(KMNC):
         coverage_upper_dict = {}
         for (layer_name, layer_size) in self.layer_size_dict.items():
             num_neuron = layer_size[0]
-            coverage_lower_dict[layer_name] = torch.zeros(num_neuron).cuda().type(torch.cuda.BoolTensor)
-            coverage_upper_dict[layer_name] = torch.zeros(num_neuron).cuda().type(torch.cuda.BoolTensor)
-            self.range_dict[layer_name] = [torch.ones(num_neuron).cuda() * 10000, torch.ones(num_neuron).cuda() * -10000]
+            coverage_lower_dict[layer_name] = torch.zeros(num_neuron).type(torch.BoolTensor).to(self.device)
+            coverage_upper_dict[layer_name] = torch.zeros(num_neuron).type(torch.BoolTensor).to(self.device)
+            self.range_dict[layer_name] = [torch.ones(num_neuron).to(self.device) * 10000, torch.ones(num_neuron).to(self.device) * -10000]
         self.coverage_dict = {
             'lower': coverage_lower_dict,
             'upper': coverage_upper_dict
@@ -661,7 +684,7 @@ class TKNC(Coverage):
             # layer_output: (batch_size, num_neuron)
             _, idx = layer_output.topk(min(self.k, num_neuron), dim=1, largest=True, sorted=False)
             # idx: (batch_size, k)
-            covered = torch.zeros(layer_output.size()).cuda()
+            covered = torch.zeros(layer_output.size()).to(self.device)
             index = tuple([torch.LongTensor(list(range(batch_size))), idx.transpose(0, 1)])
             covered[index] = 1
             is_covered = covered.sum(0) > 0
@@ -758,7 +781,7 @@ class CC(Coverage):
         if delta:
             self.current += delta
         else:
-            self.current += self.all_coverage(dist_dict)
+            self.current += self.coverage(dist_dict)
 
     def calculate(self, data):
         layer_output_dict = tool.get_layer_output(self.model, data)
@@ -792,7 +815,7 @@ class CC(Coverage):
         return total
 
     def gain(self, dist_dict):
-        increased = self.all_coverage(dist_dict)
+        increased = self.coverage(dist_dict)
         return increased
 
     def save(self, path):

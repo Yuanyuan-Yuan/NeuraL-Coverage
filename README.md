@@ -26,9 +26,6 @@ Each criterion is implemented as one Python class in `coverage.py`.
 [4]  *Guiding deep learning system testing using surprise adequacy*, ICSE 2019.  
 [5] *Reducing dnn labelling cost using surprise adequacy: An industrial case study for autonomous driving*, FSE Industry Track 2020.
 
-## Updates:
-
-TBA.
 
 ## Installation
 
@@ -39,10 +36,6 @@ TBA.
     cd NeuraL-Coverage
     pip install requirements.txt
     ```
-
-- Build with Docker
-
-    We also provide a docker container for this repo, please see [DOCKER](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage/blob/main/DOCKER.md).
 
 ## Model & Dataset
 
@@ -84,7 +77,4 @@ for data in data_stream:
 cov = criterion.current
 ```
 
-## Experiments
-
-TODO.
 
