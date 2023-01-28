@@ -39,8 +39,10 @@ Each criterion is implemented as one Python class in `coverage.py`.
 
 ## Model & Dataset
 
-- Pretrained models: please see [MODEL](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage/blob/main/MODEL.md).
-- Datasets: please see [DATASET](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage/blob/main/DATASET.md).
+- Pretrained models: please see [MODEL](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage/tree/main/pretrained_models).
+- Datasets: please see [DATASET](https://github.com/Yuanyuan-Yuan/NeuraL-Coverage/tree/main/datasets).
+
+Download `pretrained_models`, `datasets`, and `adversarial_examples` folders [here](https://hkustconnect-my.sharepoint.com/:f:/g/personal/yyuanaq_connect_ust_hk/EhO-hLQ6SRVItt-ZBkrD-8YBAZTqGAdxOsnMOvHIXeKS9A?e=DjdDsK).
 
 ## Getting Started
 
@@ -77,4 +79,74 @@ for data in data_stream:
 cov = criterion.current
 ```
 
+## Experiments
 
+After prepring all data and pretrained models, you should first set these paths
+in `constants.py`.
+
+### Diversity of Test Suites
+
+#### Discriminative (Image) Model
+
+```bash
+python eval_diversity_image.py --model resnet50 --dataset CIFAR10 --criterion NC --hyper 0.75
+```
+
+- `--model` - The tested DNN.  
+chocies = [`resnet5`, `vgg16_bn`, `mobilenet_v2`]
+
+- `--dataset` - Training dataset of the tested DNN. Test suites are generated using test split of this dataset.  
+choices = [`CIFAR10`, `ImageNet`]
+
+- `--criterion` - The used coverage criterion.  
+choices = [`NC`, `KMNC`, `NBC`, `SNAC`, `TKNC`, `TKNP`, `CC`, `LSC`, `DSC`, `MDSC`, `NLC`]
+
+- `--hyper` - The hyper-parameter of the criterion. `None` if the criterion does not have hyper-paramater (i.e., NLC, SNAC, NBC).
+
+#### Discriminative (Text) Model
+
+```bash
+python eval_diversity_text.py --criterion NC --hyper 0.75
+```
+
+- `--criterion` - The used coverage criterion.  
+choices = [`NC`, `KMNC`, `NBC`, `SNAC`, `TKNC`, `TKNP`, `CC`, `LSC`, `DSC`, `MDSC`, `NLC`]
+
+- `--hyper` - The hyper-parameter of the criterion. `None` if the criterion does not have hyper-paramater (i.e., NLC, SNAC, NBC).
+
+#### Generative Model
+
+Our tested generative model is [BigGAN](https://arxiv.org/abs/1809.11096). We reuse the codebase of the [official implementation](https://github.com/ajbrock/BigGAN-PyTorch) and hardcode some parameters; see `BigGAN-projects/CIFAR10` and `BigGAN-projects/ImageNet`.
+
+Since we directly insert the BigGAN project path into system path, passing arguments to `eval_diversity_gen.py` in bash has conflicts with BigGAN projects. Therefore, we recommend first setting the following arguments in `eval_diversity_gen.py` and then run `python eval_diversity_gen.py`.
+
+- `--criterion` - The used coverage criterion.  
+choices = [`NC`, `KMNC`, `NBC`, `SNAC`, `TKNC`, `TKNP`, `CC`, `LSC`, `DSC`, `MDSC`, `NLC`]
+
+- `--hyper` - The hyper-parameter of the criterion. `None` if the criterion does not have hyper-paramater (i.e., NLC, SNAC, NBC).
+
+
+### Fault-Revealing Capability of Test Suites
+
+```bash
+python eval_fault_revealing.py --dataset CIFAR10 --model resnet50 --criterion NC --hyper 0.75 --AE PGD --split test
+```
+
+- `--AE` - AE generation algorithm.  
+choices = [`PGD`,  `CW`]
+
+- `--split` - Which split of the dataset to generate AEs.  
+choices = [`train`, `test`]
+
+
+### Guiding Input Mutation in DNN Testing
+
+```bash
+python fuzz.py --dataset CIFAR10 --model resnet50 --criterion NC
+```
+
+For random mutation (i.e., without any criterion as objective), run
+
+```bash
+python fuzz_rand.py --dataset CIFAR10 --model resnet50
+```
