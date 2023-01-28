@@ -70,7 +70,7 @@ criterion.build(train_loader)
 # 2. Calculation
 # `test_loader` stores all test inputs; it can be a DataLoader object in Pytorch or a list of data samples.
 criterion.assess(test_loader)
-# If test inputs are gradually given (e.g., in fuzzing), then calculate the coverage as the following way.
+# If test inputs are gradually given from a data stream (e.g., in fuzzing), then calculate the coverage as the following way.
 for data in data_stream:
     criterion.step(data)
 
