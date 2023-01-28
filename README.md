@@ -93,7 +93,7 @@ python eval_diversity_image.py --model resnet50 --dataset CIFAR10 --criterion NC
 ```
 
 - `--model` - The tested DNN.  
-chocies = [`resnet5`, `vgg16_bn`, `mobilenet_v2`]
+chocies = [`resnet50`, `vgg16_bn`, `mobilenet_v2`]
 
 - `--dataset` - Training dataset of the tested DNN. Test suites are generated using test split of this dataset.  
 choices = [`CIFAR10`, `ImageNet`]
