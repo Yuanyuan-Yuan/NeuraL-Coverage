@@ -1,0 +1,7 @@
+torch==1.9.0
+torchvision==0.10.0
+torchtext==0.10.0
+pyflann
+scipy==1.7.3
+sklearn==1.0.2
+opencv-python==4.5.3
