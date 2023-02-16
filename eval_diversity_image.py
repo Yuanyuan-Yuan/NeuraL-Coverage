@@ -19,7 +19,7 @@ import constants
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='CIFAR10', choices=['ImageNet', 'CIFAR10'])
-parser.add_argument('--model', type=str, default='resnet50', choices=['resnet50, vgg16_bn, mobilenet_v2'])
+parser.add_argument('--model', type=str, default='resnet50', choices=['resnet50', 'vgg16_bn', 'mobilenet_v2'])
 parser.add_argument('--criterion', type=str, default='NC', 
                     choices=['NLC', 'NC', 'KMNC', 'SNAC', 'NBC', 'TKNC', 'TKNP', 'CC',
                     'LSC', 'DSC', 'MDSC'])
