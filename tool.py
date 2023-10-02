@@ -146,6 +146,7 @@ class Estimator(object):
         self.CoVariance = torch.zeros(num_class, feature_num, feature_num).to(self.device)
         self.Ave = torch.zeros(num_class, feature_num).to(self.device)
         self.Amount = torch.zeros(num_class).to(self.device)
+        self.CoVarianceInv = torch.zeros(num_class, feature_num, feature_num).to(self.device)
 
     def calculate(self, features, labels=None):
         N = features.size(0)
@@ -225,6 +226,9 @@ class Estimator(object):
         self.Ave = dic['Ave']
         self.CoVariance = dic['CoVariance']
         self.Amount = dic['Amount']
+
+    def invert(self):
+        self.CoVarianceInv = torch.linalg.inv(self.CoVariance)
 
     def transform(self, features, labels):
         CV = self.CoVariance[labels]

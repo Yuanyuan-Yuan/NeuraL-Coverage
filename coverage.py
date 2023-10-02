@@ -109,6 +109,8 @@ class SurpriseCoverage(Coverage):
         self.to_numpy()
         if self.name == 'LSC':
             self.set_kde()
+        if self.name == 'MDSC':
+            self.compute_covinv()
 
     def assess(self, data_loader):
         for i, (data, label) in enumerate(tqdm(data_loader)):
@@ -162,6 +164,9 @@ class SurpriseCoverage(Coverage):
             self.SA_cache[k] = np.stack(self.SA_cache[k], 0)
 
     def set_kde(self):
+        raise NotImplementedError
+    
+    def compute_covinv(self):
         raise NotImplementedError
 
     def calculate(self):
@@ -405,8 +410,7 @@ class MDSC(SurpriseCoverage):
             SA_batch.append(layer_output[:, self.mask_index_dict[layer_name]].view(batch_size, -1))
         SA_batch = torch.cat(SA_batch, 1) # [batch_size, num_neuron]
         mu = self.estimator.Ave[label_batch]
-        covar = self.estimator.CoVariance[label_batch]
-        covar_inv = torch.linalg.inv(covar)
+        covar_inv = self.estimator.CoVarianceInv[label_batch]
         mdsa = (
             torch.bmm(torch.bmm((SA_batch - mu).unsqueeze(1), covar_inv),
             (SA_batch - mu).unsqueeze(2))
@@ -423,6 +427,9 @@ class MDSC(SurpriseCoverage):
             cove_set = set(mdsa_list)
             cove_set = self.coverage_set.union(cove_set)
         return cove_set
+    
+    def compute_covinv(self):
+        self.estimator.invert()
 
     def save(self, path):
         print('Saving recorded %s in %s...' % (self.name, path))
