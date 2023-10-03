@@ -109,6 +109,8 @@ class SurpriseCoverage(Coverage):
         self.to_numpy()
         if self.name == 'LSC':
             self.set_kde()
+        if self.name == 'MDSC':
+            self.compute_covinv()
 
     def assess(self, data_loader):
         for i, (data, label) in enumerate(tqdm(data_loader)):
@@ -162,6 +164,9 @@ class SurpriseCoverage(Coverage):
             self.SA_cache[k] = np.stack(self.SA_cache[k], 0)
 
     def set_kde(self):
+        raise NotImplementedError
+    
+    def compute_covinv(self):
         raise NotImplementedError
 
     def calculate(self):
@@ -405,8 +410,7 @@ class MDSC(SurpriseCoverage):
             SA_batch.append(layer_output[:, self.mask_index_dict[layer_name]].view(batch_size, -1))
         SA_batch = torch.cat(SA_batch, 1) # [batch_size, num_neuron]
         mu = self.estimator.Ave[label_batch]
-        covar = self.estimator.CoVariance[label_batch]
-        covar_inv = torch.linalg.inv(covar)
+        covar_inv = self.estimator.CoVarianceInv[label_batch]
         mdsa = (
             torch.bmm(torch.bmm((SA_batch - mu).unsqueeze(1), covar_inv),
             (SA_batch - mu).unsqueeze(2))
@@ -423,6 +427,9 @@ class MDSC(SurpriseCoverage):
             cove_set = set(mdsa_list)
             cove_set = self.coverage_set.union(cove_set)
         return cove_set
+    
+    def compute_covinv(self):
+        self.estimator.invert()
 
     def save(self, path):
         print('Saving recorded %s in %s...' % (self.name, path))
@@ -489,20 +496,20 @@ class NC(Coverage):
 class KMNC(Coverage):
     def init_variable(self, hyper):
         assert hyper is not None
-        self.k = hyper
+        self.k = int(hyper)
         self.name = 'KMNC'
         self.range_dict = {}
         coverage_multisec_dict = {}
         for (layer_name, layer_size) in self.layer_size_dict.items():
             num_neuron = layer_size[0]
-            coverage_multisec_dict[layer_name] = torch.zeros((num_neuron, k + 1)).type(torch.BoolTensor).to(self.device)
+            coverage_multisec_dict[layer_name] = torch.zeros((num_neuron, self.k + 1)).type(torch.BoolTensor).to(self.device)
             self.range_dict[layer_name] = [torch.ones(num_neuron).to(self.device) * 10000, torch.ones(num_neuron).to(self.device) * -10000]
         self.coverage_dict = {
             'multisec': coverage_multisec_dict
         }
         self.current = 0
 
-    def build(data_loader):
+    def build(self, data_loader):
         print('Building range...')
         for data, *_ in tqdm(data_loader):
             if isinstance(data, tuple):
@@ -538,7 +545,7 @@ class KMNC(Coverage):
 
             index = tuple([torch.LongTensor(list(range(num_neuron))), multisec_output])
             multisec_covered[index] = True
-            multisec_cove_dict[layer_name] = multisec_covered | self.cove_dict['multisec'][layer_name]
+            multisec_cove_dict[layer_name] = multisec_covered | self.coverage_dict['multisec'][layer_name]
         
         return {
             'multisec': multisec_cove_dict
@@ -610,7 +617,7 @@ class SNAC(KMNC):
 
 
 class NBC(KMNC):
-    def init_variable(self):
+    def init_variable(self, hyper=None):
         assert hyper is None
         self.name = 'NBC'
         self.range_dict = {}
@@ -668,7 +675,7 @@ class NBC(KMNC):
 class TKNC(Coverage):
     def init_variable(self, hyper):
         assert hyper is not None
-        self.k = hyper
+        self.k = int(hyper)
         self.coverage_dict = {}
         for (layer_name, layer_size) in self.layer_size_dict.items():
             num_neuron = layer_size[0]
