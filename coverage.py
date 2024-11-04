@@ -266,7 +266,7 @@ class NLC(Coverage):
             return None
 
     def norm(self, vec, mode='L1', reduction='mean'):
-        m = vec.size(0)
+        m = np.prod(vec.size())
         assert mode in ['L1', 'L2']
         assert reduction in ['mean', 'sum']
         if mode == 'L1':
