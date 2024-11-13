@@ -79,9 +79,5 @@ class Logger(object):
              engine.criterion.current - engine.initial_coverage,
              engine.num_ae, engine.delta_batch))
 
-    def save(self):
-        path = os.path.join('/'.join(self.log_path.split('/')[:-1]), 'label2pred.pth')
-        torch.save(self.label2pred, path)
-
     def exit(self):
         self.f.close()
