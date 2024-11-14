@@ -107,7 +107,6 @@ class Fuzzer:
     def exit(self):
         self.print_info()
         self.criterion.save(self.params.coverage_dir + 'coverage.pt')
-        self.logger.save()
         self.logger.exit()
 
     def can_terminate(self):
@@ -351,7 +350,6 @@ if __name__ == '__main__':
                 if engine is not None:
                     engine.print_info()
                     if engine.logger is not None:
-                        engine.logger.save()
                         engine.logger.exit()
                     if engine.criterion is not None:
                         engine.criterion.save(args.coverage_dir + 'coverage_int.pth')
